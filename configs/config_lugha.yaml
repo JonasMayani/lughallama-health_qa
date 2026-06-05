@@ -1,51 +1,38 @@
-# Lugha-Llama-8B bf16 LoRA fine-tuning for multilingual African health QA.
+# config_lugha.yaml — Lugha-Llama-8B QLoRA fine-tuning
 #
-# Lugha-Llama is a base Llama-3.1-8B model continued-pretrained on African
-# languages. It is not instruction-tuned, so this project uses a plain prompt
-# ending in "Answer:" and masks prompt tokens during training.
+# Lugha-Llama is Llama-3.1-8B continued-pretrained on African languages.
+# CRITICAL: it is a BASE model (not instruction-tuned), so there is NO chat
+# template. We use a plain instruction prompt with an explicit response marker
+# and train the model to continue after it. This is the main difference from
+# the Aya pipeline (which used apply_chat_template).
 #
-# This config intentionally disables 4-bit quantisation. The model is loaded
-# directly in bf16 for an A100 80GB RunPod GPU.
+# Variants (pick via model.base_model):
+#   Lugha-Llama/Lugha-Llama-8B            (base African-adapted)
+#   Lugha-Llama/Lugha-Llama-8B-wura_edu   (best on IrokoBench; recommended)
+#   Lugha-Llama/Lugha-Llama-8B-wura_math  (math-leaning)
 
 seed: 42
 deterministic: true
 
 paths:
-  workspace: /workspace/lughallama-health_qa
-  data_raw: /workspace/lughallama-health_qa/data/raw
-  data_cleaned: /workspace/lughallama-health_qa/data/cleaned
-  data_augmented: /workspace/lughallama-health_qa/data/augmented
-  models: /workspace/lughallama-health_qa/models/checkpoints
-  submissions: /workspace/lughallama-health_qa/submissions
-  reports: /workspace/lughallama-health_qa/reports
-  logs: /workspace/lughallama-health_qa/logs
+  workspace: /workspace/lugha-health-qa
+  data_raw: /workspace/lugha-health-qa/data/raw
+  data_cleaned: /workspace/lugha-health-qa/data/cleaned
+  data_augmented: /workspace/lugha-health-qa/data/augmented
+  models: /workspace/lugha-health-qa/models/checkpoints
+  submissions: /workspace/lugha-health-qa/submissions
+  reports: /workspace/lugha-health-qa/reports
+  logs: /workspace/lugha-health-qa/logs
 
 dataset:
   train_file: data/augmented/final_train_v2.csv
-  val_file: data/cleaned/val_clean_lugha.csv
-  test_file: data/cleaned/test_clean_lugha.csv
+  val_file: data/cleaned/val_clean.csv
+  test_file: data/raw/Test.csv
   id_col: ID
   input_col: input
   output_col: output
   subset_col: subset
   languages: [Eng_Uga, Aka_Gha, Eng_Gha, Eng_Eth, Lug_Uga, Eng_Ken, Swa_Ken, Amh_Eth]
-
-cleaning:
-  enabled: true
-  apply_on_load: true
-  fix_mojibake: true
-  normalize_quotes: true
-  remove_prompt_suffixes: true
-  normalize_sentence_spacing: true
-  strip_urls: true
-  drop_train_duplicates: true
-  min_input_chars: 3
-  min_output_chars: 3
-  cleaned_train_file: data/cleaned/train_clean_lugha.csv
-  cleaned_val_file: data/cleaned/val_clean_lugha.csv
-  cleaned_test_file: data/cleaned/test_clean_lugha.csv
-  report_file: reports/cleaning_report.json
-  issues_file: reports/cleaning_issues.csv
 
 language_names:
   Eng_Uga: English
@@ -58,36 +45,35 @@ language_names:
   Amh_Eth: Amharic
 
 model:
-  base_model: Lugha-Llama/Lugha-Llama-8B-wura_edu
-  trust_remote_code: false
-  torch_dtype: bfloat16
-  attn_implementation: sdpa
-  low_cpu_mem_usage: true
+  base_model: Lugha-Llama/Lugha-Llama-8B-wura_edu   # -edu is best on IrokoBench
   max_seq_length: 768
   max_prompt_length: 320
-  max_new_tokens: 384
+  max_new_tokens: 256
 
-  # Kept explicit so accidental QLoRA changes are easy to spot.
-  load_in_4bit: false
+  load_in_4bit: true
+  bnb_4bit_quant_type: nf4
+  bnb_4bit_compute_dtype: bfloat16
+  bnb_4bit_use_double_quant: true
 
+# ─── LoRA — Llama target modules (same as Aya; both are Llama-family) ───────
 lora:
   enabled: true
-  r: 64
+  r: 32
   lora_alpha: 64
   lora_dropout: 0.05
   target_modules:
-    - q_proj
-    - k_proj
-    - v_proj
-    - o_proj
-    - gate_proj
-    - up_proj
-    - down_proj
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
   bias: none
   task_type: CAUSAL_LM
 
 optimiser:
-  optim: adamw_torch_fused
+  optim: paged_adamw_8bit
   lr: 2.0e-4
   weight_decay: 0.0
   lr_scheduler: cosine
@@ -96,13 +82,16 @@ optimiser:
 
 training:
   epochs: 3
-  output_dir_suffix: lugha8b_bf16_lora_a100_fast_v1
-  early_stopping_patience: 3
+  output_dir_suffix: lugha8b_4bit_v1
+  early_stopping_patience: 2
 
-  # Fast single A100 profile. If your A100 is 40 GB and OOMs, lower train/eval batch to 4.
-  per_device_train_batch: 16
-  per_device_eval_batch: 8
-  gradient_accumulation: 4
+  per_device_train_batch: 4        # start small (Aya OOM'd at 12); raise if VRAM allows
+  per_device_eval_batch: 4
+  gradient_accumulation: 9          # 4 × 9 = effective batch 36
+
+  auto_batch_size: false
+  min_per_device_train_batch: 1
+  max_per_device_train_batch: 8
 
   bf16: true
   fp16: false
@@ -121,8 +110,13 @@ training:
   resume_from_checkpoint: auto
   eval_max_samples: 600
 
+# ─── Prompt — PLAIN instruction format (NO chat template; base model) ──────
+# We construct: <instruction + question><response marker><answer><eos>
+# Training masks everything up to and including the response marker; loss is
+# computed only on the answer tokens.
 prompt:
-  template: "You are a multilingual health assistant. Answer the health question accurately, safely, and completely in {language}.\n\nQuestion: {question}\n\nAnswer:"
+  template: "You are a multilingual health assistant. Answer the question accurately and completely in {language}.\n\nQuestion: {question}\n\nAnswer:"
+  # The answer is appended after this during training, and generated after it at inference.
 
 decoding:
   default:
@@ -130,24 +124,16 @@ decoding:
     temperature: 0.3
     top_p: 0.9
     repetition_penalty: 1.15
-    no_repeat_ngram_size: 6
+    no_repeat_ngram_size: 3
     min_new_tokens: 30
-    max_new_tokens: 384
+    max_new_tokens: 256
   per_language: {}
 
 evaluation:
   rouge_types: [rouge1, rougeL]
-  metric_weights:
-    rouge1_f1: 0.35
-    rougeL_f1: 0.35
-    chrf: 0.25
+  metric_weights: {rouge1_f1: 0.37, rougeL_f1: 0.37, llm_judge: 0.26}
   keep_prefix: true
-
-submission:
-  default_tag: lugha8b_bf16_lora_a100_fast_v1
-  default_file: submissions/submission_lugha8b_bf16_lora_a100_fast_v1.csv
-  target_columns: [TargetRLF1, TargetR1F1, TargetLLM]
 
 tracking:
   backend: none
-  run_name: lugha-llama-8b-bf16-lora-health-qa-a100-fast-v1
+  run_name: lugha-llama-8b-4bit-qlora-v1

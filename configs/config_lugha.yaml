@@ -1,0 +1,152 @@
+# Lugha-Llama-8B bf16 LoRA fine-tuning for multilingual African health QA.
+#
+# Lugha-Llama is a base Llama-3.1-8B model continued-pretrained on African
+# languages. It is not instruction-tuned, so this project uses a plain prompt
+# ending in "Answer:" and masks prompt tokens during training.
+#
+# This config intentionally disables 4-bit quantisation. The model is loaded
+# directly in bf16 for an A100 80GB RunPod GPU.
+
+seed: 42
+deterministic: true
+
+paths:
+  workspace: /workspace/lughallama-health_qa
+  data_raw: /workspace/lughallama-health_qa/data/raw
+  data_cleaned: /workspace/lughallama-health_qa/data/cleaned
+  data_augmented: /workspace/lughallama-health_qa/data/augmented
+  models: /workspace/lughallama-health_qa/models/checkpoints
+  submissions: /workspace/lughallama-health_qa/submissions
+  reports: /workspace/lughallama-health_qa/reports
+  logs: /workspace/lughallama-health_qa/logs
+
+dataset:
+  train_file: data/augmented/final_train_v2.csv
+  val_file: data/augmented/final_val_v2.csv
+  test_file: data/raw/Test.csv
+  id_col: ID
+  input_col: input
+  output_col: output
+  subset_col: subset
+  languages: [Eng_Uga, Aka_Gha, Eng_Gha, Eng_Eth, Lug_Uga, Eng_Ken, Swa_Ken, Amh_Eth]
+
+cleaning:
+  enabled: true
+  apply_on_load: true
+  fix_mojibake: true
+  normalize_quotes: true
+  remove_prompt_suffixes: true
+  normalize_sentence_spacing: true
+  strip_urls: true
+  drop_train_duplicates: true
+  min_input_chars: 3
+  min_output_chars: 3
+  cleaned_train_file: data/cleaned/train_clean_lugha.csv
+  cleaned_val_file: data/cleaned/val_clean_lugha.csv
+  cleaned_test_file: data/cleaned/test_clean_lugha.csv
+  report_file: reports/cleaning_report.json
+  issues_file: reports/cleaning_issues.csv
+
+language_names:
+  Eng_Uga: English
+  Aka_Gha: Akan
+  Eng_Gha: English
+  Eng_Eth: English
+  Lug_Uga: Luganda
+  Eng_Ken: English
+  Swa_Ken: Swahili
+  Amh_Eth: Amharic
+
+model:
+  base_model: Lugha-Llama/Lugha-Llama-8B-wura_edu
+  trust_remote_code: false
+  torch_dtype: bfloat16
+  attn_implementation: sdpa
+  low_cpu_mem_usage: true
+  max_seq_length: 768
+  max_prompt_length: 320
+  max_new_tokens: 256
+
+  # Kept explicit so accidental QLoRA changes are easy to spot.
+  load_in_4bit: false
+
+lora:
+  enabled: true
+  r: 32
+  lora_alpha: 64
+  lora_dropout: 0.05
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+  bias: none
+  task_type: CAUSAL_LM
+
+optimiser:
+  optim: adamw_torch_fused
+  lr: 2.0e-4
+  weight_decay: 0.0
+  lr_scheduler: cosine
+  warmup_ratio: 0.03
+  max_grad_norm: 0.3
+
+training:
+  epochs: 3
+  output_dir_suffix: lugha8b_bf16_lora_v1
+  early_stopping_patience: 2
+
+  per_device_train_batch: 8
+  per_device_eval_batch: 8
+  gradient_accumulation: 4
+
+  bf16: true
+  fp16: false
+  tf32: true
+  gradient_checkpointing: true
+  dataloader_num_workers: 4
+  logging_steps: 20
+  eval_strategy: steps
+  eval_steps: 300
+  save_strategy: steps
+  save_steps: 300
+  save_total_limit: 3
+  load_best_model_at_end: true
+  metric_for_best_model: eval_loss
+  greater_is_better: false
+  resume_from_checkpoint: auto
+  eval_max_samples: 600
+
+prompt:
+  template: "You are a multilingual health assistant. Answer the health question accurately, safely, and completely in {language}.\n\nQuestion: {question}\n\nAnswer:"
+
+decoding:
+  default:
+    do_sample: false
+    temperature: 0.3
+    top_p: 0.9
+    repetition_penalty: 1.15
+    no_repeat_ngram_size: 3
+    min_new_tokens: 30
+    max_new_tokens: 256
+  per_language: {}
+
+evaluation:
+  rouge_types: [rouge1, rougeL]
+  metric_weights:
+    rouge1_f1: 0.35
+    rougeL_f1: 0.35
+    chrf: 0.30
+  keep_prefix: true
+
+submission:
+  default_tag: lugha8b_bf16_lora_v1
+  default_file: submissions/submission_lugha8b_bf16_lora_v1.csv
+  target_columns: [TargetRLF1, TargetR1F1, TargetLLM]
+
+tracking:
+  backend: none
+  run_name: lugha-llama-8b-bf16-lora-health-qa-v1

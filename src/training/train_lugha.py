@@ -250,6 +250,13 @@ def build_training_args(cfg: dict[str, Any], output_dir: Path) -> TrainingArgume
 
     return TrainingArguments(**args)
 
+    logger.info(
+        f"TRAINER CADENCE | "
+        f"logging_steps={training_args.logging_steps} | "
+        f"eval_strategy={getattr(training_args, 'eval_strategy', getattr(training_args, 'evaluation_strategy', None))} | "
+        f"eval_steps={training_args.eval_steps} | "
+        f"save_steps={training_args.save_steps}"
+    )
 
 def find_resume_checkpoint(output_dir: Path, cfg: dict[str, Any]) -> bool | str | None:
     resume = cfg["training"].get("resume_from_checkpoint", "auto")

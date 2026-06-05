@@ -22,8 +22,8 @@ paths:
 
 dataset:
   train_file: data/augmented/final_train_v2.csv
-  val_file: data/augmented/final_val_v2.csv
-  test_file: data/raw/Test.csv
+  val_file: data/cleaned/val_clean_lugha.csv
+  test_file: data/cleaned/test_clean_lugha.csv
   id_col: ID
   input_col: input
   output_col: output
@@ -65,14 +65,14 @@ model:
   low_cpu_mem_usage: true
   max_seq_length: 768
   max_prompt_length: 320
-  max_new_tokens: 256
+  max_new_tokens: 384
 
   # Kept explicit so accidental QLoRA changes are easy to spot.
   load_in_4bit: false
 
 lora:
   enabled: true
-  r: 32
+  r: 64
   lora_alpha: 64
   lora_dropout: 0.05
   target_modules:
@@ -97,10 +97,10 @@ optimiser:
 training:
   epochs: 3
   output_dir_suffix: lugha8b_bf16_lora_a100_fast_v1
-  early_stopping_patience: 2
+  early_stopping_patience: 3
 
   # Fast single A100 profile. If your A100 is 40 GB and OOMs, lower train/eval batch to 4.
-  per_device_train_batch: 8
+  per_device_train_batch: 16
   per_device_eval_batch: 8
   gradient_accumulation: 4
 
@@ -130,9 +130,9 @@ decoding:
     temperature: 0.3
     top_p: 0.9
     repetition_penalty: 1.15
-    no_repeat_ngram_size: 3
+    no_repeat_ngram_size: 6
     min_new_tokens: 30
-    max_new_tokens: 256
+    max_new_tokens: 384
   per_language: {}
 
 evaluation:
@@ -140,7 +140,7 @@ evaluation:
   metric_weights:
     rouge1_f1: 0.35
     rougeL_f1: 0.35
-    chrf: 0.30
+    chrf: 0.25
   keep_prefix: true
 
 submission:

@@ -16,7 +16,9 @@ src/evaluation/evaluate_lugha.py   Computes ROUGE and chrF metrics
 scripts/runpod_setup.sh            RunPod environment setup
 scripts/clean_data.sh              Materializes cleaned CSV files and reports
 scripts/clean_data_local.ps1       Windows local cleaning entrypoint
+scripts/train_3xa40.sh             Distributed training on 3x A40 GPUs
 scripts/train_and_evaluate.sh      Full training, validation scoring, and test submission
+scripts/train_and_evaluate_3xa40.sh Full 3x A40 training plus submission
 scripts/evaluate_and_submit.sh     Validation scoring plus Zindi submission
 scripts/train.sh                   Training entrypoint
 scripts/evaluate_val.sh            Validation generation + scoring
@@ -99,10 +101,37 @@ or:
 python src/training/train_lugha.py --config configs/config_lugha.yaml
 ```
 
+For a 3x A40 RunPod, use distributed training:
+
+```bash
+bash scripts/train_3xa40.sh
+```
+
+For a full 3x A40 train, validation, test, and submission run:
+
+```bash
+bash scripts/train_and_evaluate_3xa40.sh
+```
+
+The A40 config uses a conservative per-GPU batch size of 4 with gradient accumulation 8. If you see OOM, reduce `training.per_device_train_batch` to 2. If memory is comfortable, try 6 or 8.
+
+The default config is tuned for a fast single A100 run:
+
+```yaml
+per_device_train_batch: 8
+per_device_eval_batch: 8
+gradient_accumulation: 4
+eval_steps: 500
+save_steps: 500
+save_total_limit: 2
+```
+
+If your A100 is 40 GB and you see OOM, lower `per_device_train_batch` and `per_device_eval_batch` to `4`.
+
 The best LoRA adapter and tokenizer are saved under:
 
 ```text
-models/checkpoints/Lugha-Llama_Lugha-Llama-8B-wura_edu_lugha8b_bf16_lora_v1/best
+models/checkpoints/Lugha-Llama_Lugha-Llama-8B-wura_edu_lugha8b_bf16_lora_a100_fast_v1/best
 ```
 
 ## Train And Evaluate
@@ -122,7 +151,7 @@ bash scripts/evaluate_and_submit.sh
 This loads the best trained adapter once, writes validation outputs under `models/checkpoints/.../final_eval`, and creates:
 
 ```text
-submissions/submission_lugha8b_bf16_lora_v1.csv
+submissions/submission_lugha8b_bf16_lora_a100_fast_v1.csv
 ```
 
 ## Evaluate Validation Split
@@ -143,7 +172,7 @@ This writes:
 
 ```text
 submissions/test_predictions.csv
-submissions/submission_lugha8b_bf16_lora_v1.csv
+submissions/submission_lugha8b_bf16_lora_a100_fast_v1.csv
 ```
 
 ## Notes

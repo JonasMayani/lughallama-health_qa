@@ -21,9 +21,9 @@ paths:
   logs: /workspace/lughallama-health_qa/logs
 
 dataset:
-  train_file: data/cleaned/train_clean_lugha.csv
-  val_file: data/cleaned/val_clean_lugha.csv
-  test_file: data/cleaned/test_clean_lugha.csv
+  train_file: data/augmented/final_train_v2.csv
+  val_file: data/augmented/final_val_v2.csv
+  test_file: data/raw/Test.csv
   id_col: ID
   input_col: input
   output_col: output
@@ -96,9 +96,10 @@ optimiser:
 
 training:
   epochs: 3
-  output_dir_suffix: lugha8b_bf16_lora_v1
+  output_dir_suffix: lugha8b_bf16_lora_a100_fast_v1
   early_stopping_patience: 2
 
+  # Fast single A100 profile. If your A100 is 40 GB and OOMs, lower train/eval batch to 4.
   per_device_train_batch: 8
   per_device_eval_batch: 8
   gradient_accumulation: 4
@@ -110,10 +111,10 @@ training:
   dataloader_num_workers: 4
   logging_steps: 20
   eval_strategy: steps
-  eval_steps: 300
+  eval_steps: 500
   save_strategy: steps
-  save_steps: 300
-  save_total_limit: 3
+  save_steps: 500
+  save_total_limit: 2
   load_best_model_at_end: true
   metric_for_best_model: eval_loss
   greater_is_better: false
@@ -143,10 +144,10 @@ evaluation:
   keep_prefix: true
 
 submission:
-  default_tag: lugha8b_bf16_lora_v1
-  default_file: submissions/submission_lugha8b_bf16_lora_v1.csv
+  default_tag: lugha8b_bf16_lora_a100_fast_v1
+  default_file: submissions/submission_lugha8b_bf16_lora_a100_fast_v1.csv
   target_columns: [TargetRLF1, TargetR1F1, TargetLLM]
 
 tracking:
   backend: none
-  run_name: lugha-llama-8b-bf16-lora-health-qa-v1
+  run_name: lugha-llama-8b-bf16-lora-health-qa-a100-fast-v1

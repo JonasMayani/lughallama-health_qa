@@ -68,6 +68,13 @@ def seed_everything(cfg: dict[str, Any]) -> None:
         torch.backends.cudnn.allow_tf32 = True
 
 
+def configure_cuda_device() -> int:
+    local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+    if torch.cuda.is_available():
+        torch.cuda.set_device(local_rank)
+    return local_rank
+
+
 def tokenize_example(example: dict[str, Any], tokenizer: AutoTokenizer, cfg: dict[str, Any]) -> dict[str, list[int]]:
     language = language_for_subset(example["subset"], cfg)
     prompt_text = build_prompt(example["input"], language, cfg["prompt"])
@@ -130,6 +137,7 @@ def build_datasets(cfg: dict[str, Any], tokenizer: AutoTokenizer) -> tuple[Datas
 def load_model_and_tokenizer(cfg: dict[str, Any]) -> tuple[torch.nn.Module, AutoTokenizer]:
     base_model = cfg["model"]["base_model"]
     dtype = torch_dtype_from_config(cfg)
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
 
     if cfg["model"].get("load_in_4bit", False):
         raise ValueError("This project is configured for bf16 training. Set model.load_in_4bit to false.")
@@ -145,10 +153,11 @@ def load_model_and_tokenizer(cfg: dict[str, Any]) -> tuple[torch.nn.Module, Auto
 
     model_kwargs = {
         "torch_dtype": dtype,
-        "device_map": {"": 0},
         "low_cpu_mem_usage": bool(cfg["model"].get("low_cpu_mem_usage", True)),
         "trust_remote_code": bool(cfg["model"].get("trust_remote_code", False)),
     }
+    if world_size <= 1:
+        model_kwargs["device_map"] = {"": 0}
     attn_impl = cfg["model"].get("attn_implementation")
     if attn_impl:
         model_kwargs["attn_implementation"] = attn_impl
@@ -236,6 +245,9 @@ def build_training_args(cfg: dict[str, Any], output_dir: Path) -> TrainingArgume
     else:
         args["evaluation_strategy"] = training["eval_strategy"]
 
+    if int(os.environ.get("WORLD_SIZE", "1")) > 1:
+        args["ddp_find_unused_parameters"] = False
+
     return TrainingArguments(**args)
 
 
@@ -264,8 +276,13 @@ def main() -> None:
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for Lugha-Llama fine-tuning.")
 
+    local_rank = configure_cuda_device()
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
     free, total = torch.cuda.mem_get_info()
-    logger.info(f"GPU: {torch.cuda.get_device_name(0)} | Free memory: {free / 1e9:.1f}/{total / 1e9:.1f} GB")
+    logger.info(
+        f"GPU rank {local_rank}/{world_size}: {torch.cuda.get_device_name(local_rank)} | "
+        f"Free memory: {free / 1e9:.1f}/{total / 1e9:.1f} GB"
+    )
 
     seed_everything(cfg)
     model, tokenizer = load_model_and_tokenizer(cfg)

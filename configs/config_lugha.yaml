@@ -65,7 +65,7 @@ model:
   low_cpu_mem_usage: true
   max_seq_length: 768
   max_prompt_length: 320
-  max_new_tokens: 256
+  max_new_tokens: 384
 
   # Kept explicit so accidental QLoRA changes are easy to spot.
   load_in_4bit: false

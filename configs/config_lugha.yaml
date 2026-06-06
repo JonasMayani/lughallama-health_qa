@@ -21,7 +21,7 @@ paths:
   logs: /workspace/lughallama-health_qa/logs
 
 dataset:
-  train_file: data/augmented/final_train_v2.csv
+  train_file:  data/cleaned/train_clean_lugha.csv
   val_file: data/cleaned/val_clean_lugha.csv
   test_file: data/cleaned/test_clean_lugha.csv
   id_col: ID

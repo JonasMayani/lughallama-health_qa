@@ -101,7 +101,7 @@ training:
 
   # Fast single A100 profile. If your A100 is 40 GB and OOMs, lower train/eval batch to 4.
   per_device_train_batch: 8
-  per_device_eval_batch: 8
+  per_device_eval_batch: 24
   gradient_accumulation: 4
 
   bf16: true
